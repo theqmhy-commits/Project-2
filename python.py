@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
+from google.genai import types # THAY ĐỔI 1: Import types để sử dụng cấu hình
 
 # --- Cấu hình Trang Streamlit ---
 st.set_page_config(
@@ -94,12 +95,12 @@ def get_ai_analysis(data_for_ai, api_key):
     except Exception as e:
         return f"Đã xảy ra lỗi không xác định: {e}"
 
-# --- Hàm xử lý Chat (ĐÃ SỬA) ---
+# --- Hàm xử lý Chat (ĐÃ SỬA VÀ CỐ ĐỊNH LỖI system_instruction) ---
 # Hàm này giờ chỉ chịu trách nhiệm gọi API và trả về phản hồi, không sửa đổi session state.
 def handle_chat_query(data_for_ai_context, api_key):
     """Xử lý câu hỏi chat, duy trì lịch sử và ngữ cảnh dữ liệu. Lấy prompt từ state."""
     try:
-        # Tạo prompt đầy đủ, bao gồm ngữ cảnh dữ liệu để AI luôn có thông tin
+        # Tạo system instruction (hướng dẫn vai trò)
         system_instruction = f"""
         Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. Hãy trả lời câu hỏi của người dùng dựa trên ngữ cảnh dữ liệu tài chính sau:
         ---
@@ -117,12 +118,18 @@ def handle_chat_query(data_for_ai_context, api_key):
         
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash'
+        
+        # THAY ĐỔI 2: Tạo GenerateContentConfig để truyền system_instruction
+        # Điều này khắc phục lỗi "unexpected keyword argument 'system_instruction'".
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction
+        )
 
-        # Gọi API với lịch sử và system instruction
+        # Gọi API với lịch sử và config
         response = client.models.generate_content(
             model=model_name,
             contents=contents,
-            system_instruction=system_instruction
+            config=config # Truyền config chứa system_instruction vào đây
         )
         
         return response.text # Chỉ trả về văn bản phản hồi
@@ -248,7 +255,7 @@ if uploaded_file is not None:
                 else:
                     st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng nhập khóa API ở thanh bên (Sidebar) hoặc cấu hình trong Streamlit Secrets.")
 
-            # --- Chức năng 6: Khung Chat AI (Hỏi Đáp về Dữ liệu) - ĐÃ SỬA ---
+            # --- Chức năng 6: Khung Chat AI (Hỏi Đáp về Dữ liệu) - ĐÃ SỬA VÀ CỐ ĐỊNH LỖI system_instruction ---
             st.markdown("---")
             st.subheader("6. Khung Chat AI: Hỏi đáp chuyên sâu về Báo cáo Tài chính")
             
@@ -277,7 +284,6 @@ if uploaded_file is not None:
                     with st.chat_message("assistant"):
                         with st.spinner('Gemini đang phân tích và trả lời...'):
                             # Gọi hàm xử lý chat (truyền ngữ cảnh dữ liệu, API key)
-                            # Hàm này đã được sửa để lấy prompt từ state và chỉ trả về response text
                             ai_response = handle_chat_query(data_for_ai_context, GEMINI_API_KEY)
                             
                             # 4. Thêm phản hồi của AI vào lịch sử session state
