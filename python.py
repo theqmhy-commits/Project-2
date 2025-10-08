@@ -94,9 +94,10 @@ def get_ai_analysis(data_for_ai, api_key):
     except Exception as e:
         return f"Đã xảy ra lỗi không xác định: {e}"
 
-# --- Hàm xử lý Chat (MỚI) ---
-def handle_chat_query(prompt, data_for_ai_context, api_key):
-    """Xử lý câu hỏi chat, duy trì lịch sử và ngữ cảnh dữ liệu."""
+# --- Hàm xử lý Chat (ĐÃ SỬA) ---
+# Hàm này giờ chỉ chịu trách nhiệm gọi API và trả về phản hồi, không sửa đổi session state.
+def handle_chat_query(data_for_ai_context, api_key):
+    """Xử lý câu hỏi chat, duy trì lịch sử và ngữ cảnh dữ liệu. Lấy prompt từ state."""
     try:
         # Tạo prompt đầy đủ, bao gồm ngữ cảnh dữ liệu để AI luôn có thông tin
         system_instruction = f"""
@@ -108,17 +109,11 @@ def handle_chat_query(prompt, data_for_ai_context, api_key):
         """
         
         # Chuyển đổi lịch sử st.session_state sang định dạng API
-        # Lấy lịch sử chỉ 5 tin nhắn gần nhất để tránh vượt giới hạn token
-        recent_messages = st.session_state.messages[-5:]
-        
-        # Lấy tin nhắn người dùng vừa gửi để thêm vào list contents
-        user_message_part = {"role": "user", "parts": [{"text": prompt}]}
-        
-        # Lịch sử + tin nhắn mới nhất
+        # Lấy lịch sử bao gồm cả tin nhắn user vừa gửi (lên đến 6 tin nhắn gần nhất)
         contents = [
             {"role": msg["role"], "parts": [{"text": msg["content"]}]}
-            for msg in recent_messages
-        ] + [user_message_part]
+            for msg in st.session_state.messages[-6:] 
+        ]
         
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash'
@@ -130,20 +125,12 @@ def handle_chat_query(prompt, data_for_ai_context, api_key):
             system_instruction=system_instruction
         )
         
-        ai_response = response.text
-        
-        # Thêm phản hồi của AI vào lịch sử session state
-        st.session_state.messages.append({"role": "assistant", "content": ai_response})
-        return ai_response
+        return response.text # Chỉ trả về văn bản phản hồi
 
     except APIError as e:
-        error_message = f"Lỗi gọi Gemini API trong Chat: Vui lòng kiểm tra Khóa API. Chi tiết lỗi: {e}"
-        st.session_state.messages.append({"role": "assistant", "content": error_message})
-        return error_message
+        return f"Lỗi gọi Gemini API trong Chat: Vui lòng kiểm tra Khóa API hoặc giới hạn sử dụng. Chi tiết lỗi: {e}"
     except Exception as e:
-        error_message = f"Lỗi không xác định trong Chat: {e}"
-        st.session_state.messages.append({"role": "assistant", "content": error_message})
-        return error_message
+        return f"Lỗi không xác định trong Chat: {e}"
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
@@ -261,7 +248,7 @@ if uploaded_file is not None:
                 else:
                     st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng nhập khóa API ở thanh bên (Sidebar) hoặc cấu hình trong Streamlit Secrets.")
 
-            # --- Chức năng 6: Khung Chat AI (Hỏi Đáp về Dữ liệu) - MỚI ---
+            # --- Chức năng 6: Khung Chat AI (Hỏi Đáp về Dữ liệu) - ĐÃ SỬA ---
             st.markdown("---")
             st.subheader("6. Khung Chat AI: Hỏi đáp chuyên sâu về Báo cáo Tài chính")
             
@@ -279,15 +266,27 @@ if uploaded_file is not None:
                 if not GEMINI_API_KEY:
                     st.error("Lỗi: Không tìm thấy Khóa API 'GEMINI_API_KEY'. Vui lòng nhập khóa API ở thanh bên (Sidebar) để chat.")
                 else:
-                    # Thêm tin nhắn của người dùng ngay lập tức
+                    # 1. Thêm tin nhắn của người dùng vào lịch sử session state
                     st.session_state.messages.append({"role": "user", "content": user_prompt})
                     
-                    # Gọi hàm xử lý chat
-                    with st.spinner('Gemini đang phân tích và trả lời...'):
-                        handle_chat_query(user_prompt, data_for_ai_context, GEMINI_API_KEY)
+                    # 2. Hiển thị tin nhắn người dùng ngay lập tức
+                    with st.chat_message("user"):
+                        st.markdown(user_prompt)
                         
-                        # Bắt buộc gọi rerun để Streamlit hiển thị tin nhắn mới nhất
-                        st.rerun() 
+                    # 3. Gọi hàm xử lý chat và hiển thị phản hồi của AI
+                    with st.chat_message("assistant"):
+                        with st.spinner('Gemini đang phân tích và trả lời...'):
+                            # Gọi hàm xử lý chat (truyền ngữ cảnh dữ liệu, API key)
+                            # Hàm này đã được sửa để lấy prompt từ state và chỉ trả về response text
+                            ai_response = handle_chat_query(data_for_ai_context, GEMINI_API_KEY)
+                            
+                            # 4. Thêm phản hồi của AI vào lịch sử session state
+                            st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                            
+                            # 5. Hiển thị phản hồi của AI ngay lập tức
+                            st.markdown(ai_response)
+                        
+                    # Đã loại bỏ st.rerun()
 
     except ValueError as ve:
         st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
