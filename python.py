@@ -16,6 +16,22 @@ st.title("Ứng dụng Phân Tích Báo Cáo Tài Chính 📊")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# --- Logic Lấy API Key (ĐÃ SỬA) ---
+# Ưu tiên lấy từ Streamlit Secrets, nếu không có, yêu cầu người dùng nhập ở thanh bên.
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
+
+if GEMINI_API_KEY is None:
+    st.sidebar.subheader("Cấu hình Khóa API (Bắt buộc)")
+    # Sử dụng st.sidebar để không chiếm không gian chính
+    key_input = st.sidebar.text_input(
+        "Nhập khóa Gemini API của bạn tại đây:", 
+        type="password"
+    )
+    if key_input:
+        GEMINI_API_KEY = key_input
+    else:
+        st.sidebar.warning("Vui lòng nhập khóa API để sử dụng chức năng AI.")
+
 # --- Hàm tính toán chính (Sử dụng Caching để Tối ưu hiệu suất) ---
 @st.cache_data
 def process_financial_data(df):
@@ -75,8 +91,6 @@ def get_ai_analysis(data_for_ai, api_key):
 
     except APIError as e:
         return f"Lỗi gọi Gemini API: Vui lòng kiểm tra Khóa API hoặc giới hạn sử dụng. Chi tiết lỗi: {e}"
-    except KeyError:
-        return "Lỗi: Không tìm thấy Khóa API 'GEMINI_API_KEY'. Vui lòng kiểm tra cấu hình Secrets trên Streamlit Cloud."
     except Exception as e:
         return f"Đã xảy ra lỗi không xác định: {e}"
 
@@ -238,15 +252,14 @@ if uploaded_file is not None:
             st.subheader("5. Nhận xét Tình hình Tài chính (AI) - Tự động")
             
             if st.button("Yêu cầu AI Phân tích Tự động"):
-                api_key = st.secrets.get("GEMINI_API_KEY")  
-                
-                if api_key:
+                # Sử dụng biến GEMINI_API_KEY đã được xác định trước
+                if GEMINI_API_KEY:
                     with st.spinner('Đang gửi dữ liệu và chờ Gemini phân tích...'):
-                        ai_result = get_ai_analysis(data_for_ai_context, api_key)
+                        ai_result = get_ai_analysis(data_for_ai_context, GEMINI_API_KEY)
                         st.markdown("**Kết quả Phân tích từ Gemini AI:**")
                         st.info(ai_result)
                 else:
-                    st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng cấu hình Khóa 'GEMINI_API_KEY' trong Streamlit Secrets.")
+                    st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng nhập khóa API ở thanh bên (Sidebar) hoặc cấu hình trong Streamlit Secrets.")
 
             # --- Chức năng 6: Khung Chat AI (Hỏi Đáp về Dữ liệu) - MỚI ---
             st.markdown("---")
@@ -262,17 +275,16 @@ if uploaded_file is not None:
             user_prompt = st.chat_input("Hỏi Gemini AI về báo cáo tài chính...", key=chat_input_key)
             
             if user_prompt:
-                api_key = st.secrets.get("GEMINI_API_KEY")
-                
-                if not api_key:
-                    st.error("Lỗi: Không tìm thấy Khóa API 'GEMINI_API_KEY'. Không thể chat.")
+                # Sử dụng biến GEMINI_API_KEY đã được xác định trước
+                if not GEMINI_API_KEY:
+                    st.error("Lỗi: Không tìm thấy Khóa API 'GEMINI_API_KEY'. Vui lòng nhập khóa API ở thanh bên (Sidebar) để chat.")
                 else:
                     # Thêm tin nhắn của người dùng ngay lập tức
                     st.session_state.messages.append({"role": "user", "content": user_prompt})
                     
                     # Gọi hàm xử lý chat
                     with st.spinner('Gemini đang phân tích và trả lời...'):
-                        handle_chat_query(user_prompt, data_for_ai_context, api_key)
+                        handle_chat_query(user_prompt, data_for_ai_context, GEMINI_API_KEY)
                         
                         # Bắt buộc gọi rerun để Streamlit hiển thị tin nhắn mới nhất
                         st.rerun() 
